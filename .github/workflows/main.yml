@@ -17,14 +17,40 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Compile with Maven
-        run: mvn compile
+      - name: Package with Maven
+        run: mvn package
+
+      - name: Create Docker Network
+        run: docker network create sem-network
+
+      - name: Start MySQL Container
+        run: |
+          docker run --name sem-mysql --network sem-network \
+            -e MYSQL_ROOT_PASSWORD=CiRootPass123 \
+            -e MYSQL_DATABASE=semdb \
+            -e MYSQL_USER=semuser \
+            -e MYSQL_PASSWORD=CiDbPass123 \
+            -d mysql:8.4
+
+      - name: Wait for MySQL
+        run: |
+          for i in {1..30}; do
+            if docker exec sem-mysql mysqladmin ping -h localhost -u root -pCiRootPass123 --silent; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs sem-mysql
+          exit 1
 
       - name: Build Docker Image
         run: docker build -t semimage .
 
-      - name: Run image
-        run: docker run --name semcontainer -d semimage
-
-      - name: View logs
-        run: docker logs semcontainer
+      - name: Test Application Database Connection
+        run: |
+          docker run --rm --name sem-app --network sem-network \
+            -e DB_HOST=sem-mysql \
+            -e DB_NAME=semdb \
+            -e DB_USER=semuser \
+            -e DB_PASSWORD=CiDbPass123 \
+            semimage
